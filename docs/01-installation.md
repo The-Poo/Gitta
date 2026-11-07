@@ -36,6 +36,24 @@ med `git version 2.47.0.windows.1`. Versionen ska vara 2.25 eller nyare.
 Har du inget GitHub-konto? Skapa ett gratis på <https://github.com/signup>
 först.
 
+## Ny dator? Hämta alla projekt på en gång
+
+1. Installera Git och Gitta enligt ovan och koppla ditt GitHub-konto.
+2. Tryck **clone - hämta flera projekt** under projektlistan.
+3. Välj en **rotmapp**, till exempel `C:\Projekt`. Varje projekt får en egen
+   undermapp där.
+4. Markera de projekt du vill ha (**Markera alla** för allt, eller Ctrl/Shift
+   för några) och tryck **clone valda**.
+5. Gitta hämtar dem och kopplar ihop mapparna. Därefter står projekten som
+   "Allt sparat" i listan.
+
+Ligger en mapp med rätt namn redan i rotmappen och hör till samma projekt,
+kopplar Gitta den utan att hämta något. Hör den inte till projektet hoppas den
+över och du får en rapport efteråt.
+
+Obs: bara det som är pushat till GitHub hämtas. Osparat arbete på den gamla
+datorn följer inte med, så gör **commit and push** där först.
+
 ## Om något krånglar
 
 | Problem | Lösning |

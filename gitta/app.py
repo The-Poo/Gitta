@@ -10,7 +10,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import __version__, commitfile, config, defaults, github, gitops, leakcheck, texts, theme
+from . import __version__, commitfile, config, defaults, github, gitops, leakcheck, mdview, texts, theme
 
 FONT = ("Segoe UI", 10)
 FONT_BIG = ("Segoe UI", 16, "bold")
@@ -41,7 +41,8 @@ class GittaApp(tk.Tk):
 
         self.cfg = config.load()
         self.repos = []
-        self.current = None          # repo dict of the selected project
+        self._readmes = {}           # full_name -> README text ('' if none)
+        self.current = None         # repo dict of the selected project
         self.local_path = None
         self._loaded_text = ""
         self._cancel_login = threading.Event()
@@ -280,6 +281,8 @@ class GittaApp(tk.Tk):
             row=0, column=1, sticky="we", padx=(6, 0))
         ttk.Button(bar, text="Lägg till befintlig mapp", command=self._add_existing).grid(
             row=1, column=0, columnspan=2, sticky="we", pady=(6, 0))
+        ttk.Button(bar, text="clone - hämta flera projekt", command=self._clone_many).grid(
+            row=2, column=0, columnspan=2, sticky="we", pady=(6, 0))
         bar.columnconfigure((0, 1), weight=1)
         self.tree = ttk.Treeview(left, columns=("vis", "status"), selectmode="browse")
         self.tree.heading("#0", text="Projekt")
@@ -300,6 +303,7 @@ class GittaApp(tk.Tk):
         self._reload_repos()
 
     def _reload_repos(self, select=None):
+        self._readmes.clear()  # README may have changed after pull/push
         self._set_busy(True, "Hämtar projekt från GitHub...")
         token = self.cfg["token"]
         projects = dict(self.cfg["projects"])
@@ -365,13 +369,24 @@ class GittaApp(tk.Tk):
         self.open_folder_btn = ttk.Button(links, text="Visa mappen", command=self._open_folder)
         self.open_folder_btn.pack(side="left", padx=6)
 
+        self.d_tabs = ttk.Notebook(self.d_main)
+        self.d_tabs.pack(fill="both", expand=True, pady=(6, 0))
+        self.d_tab_main = ttk.Frame(self.d_tabs, padding=8)
+        self.d_tab_readme = ttk.Frame(self.d_tabs, padding=8)
+        self.d_tabs.add(self.d_tab_main, text="Projekt")
+        self.d_tabs.add(self.d_tab_readme, text="README")
+        self.d_readme = scrolledtext.ScrolledText(
+            self.d_tab_readme, wrap="word", font=FONT, state="disabled", padx=12, pady=8)
+        self.d_readme.pack(fill="both", expand=True)
+        mdview.setup_tags(self.d_readme)
+
         # Not on this computer
-        self.d_remote = ttk.LabelFrame(self.d_main, text="Projektet finns inte på den här datorn", padding=10)
+        self.d_remote = ttk.LabelFrame(self.d_tab_main, text="Projektet finns inte på den här datorn", padding=10)
         self._action(self.d_remote, "clone", self._clone, texts.CLONE_EXPLAIN)
         self._action(self.d_remote, "Länka befintlig mapp", self._link_folder, texts.LINK_EXPLAIN)
 
         # On this computer
-        self.d_local = ttk.Frame(self.d_main)
+        self.d_local = ttk.Frame(self.d_tab_main)
         self.d_path = ttk.Label(self.d_local, foreground=GREY)
         self.d_path.pack(anchor="w")
         self.d_state = ttk.Label(self.d_local, justify="left", wraplength=620)
@@ -405,6 +420,7 @@ class GittaApp(tk.Tk):
         self.d_main.pack(fill="both", expand=True)
         self.d_title.config(text=repo["full_name"])
         self.d_desc.config(text=repo.get("description") or "(ingen beskrivning)")
+        self._show_readme(repo["full_name"])
         path = self.cfg["projects"].get(repo["full_name"])
         if path and os.path.isdir(path) and gitops.is_repo(path):
             self.local_path = path
@@ -425,6 +441,36 @@ class GittaApp(tk.Tk):
             self.d_local.pack_forget()
             self.d_remote.pack(fill="x", pady=10)
             self.open_folder_btn.config(state="disabled")
+
+    def fetch_readme(self, full, callback):
+        """callback(text, error): text '' means the project has no README."""
+        if full in self._readmes:
+            callback(self._readmes[full], None)
+            return
+
+        def done(text):
+            self._readmes[full] = text or ""
+            callback(self._readmes[full], None)
+        self.bg(lambda: github.get_readme(self.cfg["token"], full), done,
+                lambda exc: callback(None, str(exc)))
+
+    def render_readme(self, widget, text, error):
+        if error:
+            mdview.show_message(widget, f"Kunde inte hämta README: {error}")
+        elif not text.strip():
+            mdview.show_message(
+                widget, "Det här projektet har ingen README ännu.\n\n"
+                        "Tips: se docs/03-readme-guide.md för hur man skriver en.")
+        else:
+            mdview.render(widget, text)
+
+    def _show_readme(self, full):
+        mdview.show_message(self.d_readme, "Hämtar README...")
+
+        def show(text, error):
+            if self.current and self.current["full_name"] == full:
+                self.render_readme(self.d_readme, text, error)
+        self.fetch_readme(full, show)
 
     def _refresh_state(self):
         path, token = self.local_path, self.cfg["token"]
@@ -611,6 +657,18 @@ class GittaApp(tk.Tk):
             return
         NewProjectDialog(self, existing=True)
 
+    def _clone_many(self):
+        if not self._need_git():
+            return
+        if not self.repos:
+            messagebox.showinfo("Inga projekt", "Projektlistan är tom eller inte laddad än.")
+            return
+        CloneManyDialog(self)
+
+    def is_local(self, repo):
+        path = self.cfg["projects"].get(repo["full_name"])
+        return bool(path) and os.path.isdir(path)
+
     def create_project(self, name, desc, parent, new_folder, private, on_done):
         folder = os.path.join(parent, name) if new_folder else parent
         existing_repo = gitops.is_repo(folder)
@@ -796,6 +854,191 @@ class NewProjectDialog(tk.Toplevel):
         self.app.create_project(name, self.desc.get().strip(), os.path.normpath(parent),
                                 False if self.existing else self.new_folder.get(),
                                 not self.public.get(), self.destroy)
+
+
+class ReadmeWindow(tk.Toplevel):
+    """Read a project's README from GitHub without cloning it."""
+
+    def __init__(self, app, full_name):
+        super().__init__(app)
+        self.title(f"README - {full_name}")
+        self.configure(bg=theme.BG)
+        self.geometry("740x620")
+        box = scrolledtext.ScrolledText(self, wrap="word", font=FONT, state="disabled",
+                                        padx=14, pady=10)
+        box.pack(fill="both", expand=True)
+        mdview.setup_tags(box)
+        mdview.show_message(box, "Hämtar README...")
+
+        def show(text, error):
+            if self.winfo_exists():
+                app.render_readme(box, text, error)
+        app.fetch_readme(full_name, show)
+
+
+class CloneManyDialog(tk.Toplevel):
+    """Pick a root folder and several GitHub projects, then clone them all."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("clone - hämta flera projekt")
+        self.configure(bg=theme.BG)
+        self.geometry("640x580")
+        self.transient(app)
+        self.grab_set()
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, text=texts.CLONE_MANY_EXPLAIN, wraplength=590, foreground=GREY,
+                  justify="left").pack(anchor="w")
+
+        ttk.Label(f, text="1. Välj rotmappen som projekten ska hamna i:").pack(anchor="w", pady=(12, 2))
+        row = ttk.Frame(f)
+        row.pack(fill="x")
+        self.root_var = tk.StringVar(value=app.cfg.get("default_parent") or
+                                     os.path.join(os.path.expanduser("~"), "Documents"))
+        ttk.Entry(row, textvariable=self.root_var).pack(side="left", fill="x", expand=True)
+        ttk.Button(row, text="Bläddra...", command=self._browse).pack(side="left", padx=6)
+        ttk.Label(f, text="Varje projekt får en egen undermapp med projektets namn.",
+                  foreground=GREY, font=FONT_SMALL).pack(anchor="w")
+
+        self.candidates = [r for r in app.repos if not app.is_local(r)]
+        local_count = len(app.repos) - len(self.candidates)
+        ttk.Label(f, text="2. Välj vilka projekt som ska hämtas (Ctrl/Shift för flera):").pack(
+            anchor="w", pady=(12, 2))
+        tools = ttk.Frame(f)
+        tools.pack(fill="x", pady=(0, 4))
+        ttk.Button(tools, text="Markera alla", command=self._select_all).pack(side="left")
+        ttk.Button(tools, text="Avmarkera alla", command=self._select_none).pack(side="left", padx=6)
+        ttk.Button(tools, text="Läs README", command=self._read_readme).pack(side="left")
+        self.count = ttk.Label(tools, text="", foreground=theme.CYAN)
+        self.count.pack(side="right")
+
+        box = ttk.Frame(f)
+        box.pack(fill="both", expand=True)
+        self.tree = ttk.Treeview(box, columns=("vis",), selectmode="extended")
+        self.tree.heading("#0", text="Projekt")
+        self.tree.heading("vis", text="Synlighet")
+        self.tree.column("#0", width=380)
+        self.tree.column("vis", width=90, anchor="center")
+        scroll = ttk.Scrollbar(box, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        for r in self.candidates:
+            self.tree.insert("", "end", iid=r["full_name"], text=r["full_name"],
+                             values=("Private" if r["private"] else "Public",))
+        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._update_count())
+
+        note = (f"{local_count} projekt finns redan på datorn och visas inte."
+                if local_count else "")
+        if not self.candidates:
+            note = "Alla dina projekt finns redan på den här datorn."
+        self.progress = ttk.Label(f, text=note, foreground=GREY, font=FONT_SMALL)
+        self.progress.pack(anchor="w", pady=(6, 0))
+
+        btns = ttk.Frame(f)
+        btns.pack(fill="x", pady=(10, 0))
+        self.cancel_btn = ttk.Button(btns, text="Avbryt", command=self.destroy)
+        self.cancel_btn.pack(side="right", padx=6)
+        self.go_btn = ttk.Button(btns, text="clone valda", command=self._start)
+        self.go_btn.pack(side="right")
+        self._update_count()
+
+    def _browse(self):
+        d = filedialog.askdirectory(parent=self, title="Välj rotmapp",
+                                    initialdir=self.root_var.get() or None)
+        if d:
+            self.root_var.set(os.path.normpath(d))
+
+    def _read_readme(self):
+        full = self.tree.focus() or (self.tree.selection() or [None])[0]
+        if full:
+            ReadmeWindow(self.app, full)
+        else:
+            messagebox.showinfo("Välj ett projekt", "Klicka på ett projekt i listan först.", parent=self)
+
+    def _select_all(self):
+        self.tree.selection_set(self.tree.get_children())
+
+    def _select_none(self):
+        self.tree.selection_remove(self.tree.selection())
+
+    def _update_count(self):
+        n = len(self.tree.selection())
+        self.count.config(text=f"{n} av {len(self.candidates)} valda")
+        self.go_btn.config(state="normal" if n else "disabled")
+
+    def _start(self):
+        root = os.path.normpath(self.root_var.get().strip())
+        picked = [r for r in self.candidates if r["full_name"] in self.tree.selection()]
+        if not picked or not self.root_var.get().strip():
+            return
+        if not os.path.isdir(root):
+            if not messagebox.askyesno("Mappen finns inte", f"Skapa mappen\n{root}\n?", parent=self):
+                return
+            try:
+                os.makedirs(root)
+            except OSError as exc:
+                messagebox.showerror("Kunde inte skapa mappen", str(exc), parent=self)
+                return
+        if not messagebox.askyesno(
+                "Hämta projekt",
+                f"Hämta {len(picked)} projekt till\n{root}\n\nDet kan ta en stund.", parent=self):
+            return
+        self.go_btn.config(state="disabled")
+        self.cancel_btn.config(state="disabled")
+        token, app = self.app.cfg["token"], self.app
+
+        def work():
+            res = {"cloned": [], "linked": [], "skipped": [], "failed": [], "paths": {}}
+            for i, r in enumerate(picked, 1):
+                app._q.put((self._progress, (i, len(picked), r["name"])))
+                dest = os.path.join(root, r["name"])
+                try:
+                    if os.path.exists(dest):
+                        if gitops.is_repo(dest) and r["full_name"].lower() in gitops.remote_url(dest).lower():
+                            res["linked"].append(r["full_name"])
+                        else:
+                            res["skipped"].append((r["full_name"], "mappen finns redan och är inte detta projekt"))
+                            continue
+                    else:
+                        gitops.clone(r["clone_url"], dest, token)
+                        res["cloned"].append(r["full_name"])
+                    gitops.ensure_exclude(dest, commitfile.FILENAME)
+                    res["paths"][r["full_name"]] = dest
+                except gitops.GitError as exc:
+                    res["failed"].append((r["full_name"], str(exc).strip().splitlines()[-1]))
+            return res
+        app.bg(work, lambda res: self._finish(root, res), self._fail)
+
+    def _progress(self, i, n, name):
+        self.progress.config(text=f"Hämtar {i} av {n}: {name} ...", foreground=theme.CYAN)
+
+    def _fail(self, exc):
+        self.go_btn.config(state="normal")
+        self.cancel_btn.config(state="normal")
+        self.app._show_error(exc)
+
+    def _finish(self, root, res):
+        app = self.app
+        app.cfg["projects"].update(res["paths"])
+        app.cfg["default_parent"] = root
+        config.save(app.cfg)
+        lines = []
+        if res["cloned"]:
+            lines.append(f"Hämtade {len(res['cloned'])} projekt.")
+        if res["linked"]:
+            lines.append(f"Kopplade {len(res['linked'])} mappar som redan fanns i {root}.")
+        for name, why in res["skipped"]:
+            lines.append(f"Hoppade över {name}: {why}")
+        for name, why in res["failed"]:
+            lines.append(f"Misslyckades med {name}: {why}")
+        self.destroy()
+        app._reload_repos()
+        (messagebox.showwarning if res["failed"] or res["skipped"] else messagebox.showinfo)(
+            "clone klar", "\n".join(lines) or "Inget att göra.")
 
 
 def main():

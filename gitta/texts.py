@@ -39,7 +39,11 @@ Gitta har tre huvudsakliga knappar för dina projekt:
   commit and push    Sparar dina ändringar: en commit är ett sparat steg
                      med en beskrivning, push skickar det till GitHub.
   clone              Hämtar ett projekt från GitHub till din dator första
-                     gången.
+                     gången. "clone - hämta flera projekt" hämtar många på
+                     en gång till en rotmapp, bra på en ny dator.
+
+README            Fliken README i projektvyn visar projektets förstasida från
+                    GitHub, även innan du hämtat projektet.
 
 Rutiner som fungerar bra:
   1. Börja arbetet med pull.
@@ -98,4 +102,10 @@ EXISTING_FILES_WARNING = (
     "Om mappen redan innehåller filer läggs alla med i första commit. "
     "Gitta kontrollerar filerna efter nycklar och lösenord innan något "
     "skickas, men kolla själv också - särskilt om du gör projektet public."
+)
+
+CLONE_MANY_EXPLAIN = (
+    "Hämtar flera projekt från GitHub till din dator på en gång, till exempel "
+    "när du sitter vid en ny dator. Gitta kopplar ihop varje mapp med rätt "
+    "projekt så att de dyker upp som 'på datorn' i listan."
 )

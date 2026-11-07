@@ -65,6 +65,11 @@ def apply(root):
     s.configure("TLabelframe", background=BG, bordercolor=PINK)
     s.configure("TLabelframe.Label", background=BG, foreground=CYAN,
                 font=("Segoe UI", 10, "bold"))
+    s.configure("TNotebook", background=BG, borderwidth=0, tabmargins=(0, 4, 0, 0))
+    s.configure("TNotebook.Tab", background=PANEL, foreground=MUTED,
+                padding=(14, 6), font=("Segoe UI", 10, "bold"))
+    s.map("TNotebook.Tab", background=[("selected", VIOLET), ("active", PINK)],
+          foreground=[("selected", "#ffffff"), ("active", INK)])
     s.configure("TPanedwindow", background=BG)
     s.configure("Sash", sashthickness=6, background=VIOLET)
     s.configure("Vertical.TScrollbar", background=VIOLET, troughcolor=FIELD,

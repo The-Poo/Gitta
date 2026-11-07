@@ -108,6 +108,24 @@ def list_repos(token):
         page += 1
 
 
+def get_readme(token, full_name):
+    """Raw README text of a repository, or None if it has none."""
+    req = urllib.request.Request(
+        f"{API}/repos/{full_name}/readme",
+        headers={"Accept": "application/vnd.github.raw+json", "User-Agent": "Gitta",
+                 "Authorization": f"Bearer {token}",
+                 "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise GitHubError(f"GitHub svarade {exc.code} när README skulle hämtas.") from exc
+    except urllib.error.URLError as exc:
+        raise GitHubError(f"Kunde inte nå GitHub (är du online?): {exc.reason}") from exc
+
+
 def create_repo(token, name, description, private):
     return _request("POST", f"{API}/user/repos", token, {
         "name": name,
