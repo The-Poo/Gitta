@@ -8,9 +8,9 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, scrolledtext, ttk
 
-from . import __version__, commitfile, config, defaults, github, gitops, leakcheck, mdview, texts, theme
+from . import __version__, commitfile, config, defaults, github, gitops, leakcheck, mdview, popups, texts, theme
 
 FONT = ("Segoe UI", 10)
 FONT_BIG = ("Segoe UI", 16, "bold")
@@ -82,7 +82,7 @@ class GittaApp(tk.Tk):
 
     def _show_error(self, exc):
         self._set_busy(False)
-        messagebox.showerror("Något gick fel", str(exc))
+        popups.showerror("Något gick fel", str(exc))
 
     def _set_busy(self, busy, text=""):
         if hasattr(self, "busy_label"):
@@ -129,7 +129,7 @@ class GittaApp(tk.Tk):
 
     def _check_git(self):
         if not gitops.find_git():
-            if messagebox.askyesno(
+            if popups.askyesno(
                     "Git saknas",
                     "Gitta behöver programmet Git, men det hittades inte på "
                     "datorn.\n\nVill du installera det nu? (Det görs med "
@@ -138,7 +138,7 @@ class GittaApp(tk.Tk):
             return
         ver = gitops.version()
         if ver is None or ver < gitops.MIN_VERSION:
-            messagebox.showwarning(
+            popups.showwarning(
                 "Git är för gammalt",
                 "Den installerade versionen av Git verkar vara äldre än "
                 f"{gitops.MIN_VERSION[0]}.{gitops.MIN_VERSION[1]} eller kunde "
@@ -150,13 +150,13 @@ class GittaApp(tk.Tk):
             subprocess.Popen(
                 ["winget", "install", "--id", "Git.Git", "-e", "--source", "winget"],
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
-            messagebox.showinfo(
+            popups.showinfo(
                 "Installerar Git",
                 "Ett svart fönster öppnas där Git installeras. När det är "
                 "klart: stäng Gitta och starta den igen.")
         except OSError:
             webbrowser.open("https://git-scm.com/download/win")
-            messagebox.showinfo(
+            popups.showinfo(
                 "Installera Git manuellt",
                 "winget finns inte på den här datorn. Hemsidan för Git har "
                 "öppnats. Ladda ner och installera, och starta sedan om Gitta.")
@@ -164,13 +164,13 @@ class GittaApp(tk.Tk):
     def _need_git(self):
         if gitops.find_git():
             return True
-        messagebox.showerror("Git saknas", "Installera Git och starta om Gitta.")
+        popups.showerror("Git saknas", "Installera Git och starta om Gitta.")
         return False
 
     # ------------------------------------------------------------------ login
 
     def _logout(self):
-        if not messagebox.askyesno("Logga ut", "Koppla bort ditt GitHub-konto från Gitta?"):
+        if not popups.askyesno("Logga ut", "Koppla bort ditt GitHub-konto från Gitta?"):
             return
         self._save_draft()
         self.cfg.update(token="", login="", user_id=0, name="")
@@ -372,8 +372,10 @@ class GittaApp(tk.Tk):
         self.d_tabs = ttk.Notebook(self.d_main)
         self.d_tabs.pack(fill="both", expand=True, pady=(6, 0))
         self.d_tab_main = ttk.Frame(self.d_tabs, padding=8)
+        self.d_tab_pull = ttk.Frame(self.d_tabs, padding=8)
         self.d_tab_readme = ttk.Frame(self.d_tabs, padding=8)
-        self.d_tabs.add(self.d_tab_main, text="Projekt")
+        self.d_tabs.add(self.d_tab_main, text="Commit and push")
+        self.d_tabs.add(self.d_tab_pull, text="Pull")
         self.d_tabs.add(self.d_tab_readme, text="README")
         self.d_readme = scrolledtext.ScrolledText(
             self.d_tab_readme, wrap="word", font=FONT, state="disabled", padx=12, pady=8)
@@ -391,19 +393,32 @@ class GittaApp(tk.Tk):
         self.d_path.pack(anchor="w")
         self.d_state = ttk.Label(self.d_local, justify="left", wraplength=620)
         self.d_state.pack(anchor="w", pady=6)
-        self.d_files = tk.Text(self.d_local, height=6, font=("Consolas", 9),
+        self.d_files = tk.Text(self.d_local, height=4, font=("Consolas", 9),
                                state="disabled")
         self.d_files.pack(fill="x")
-        self._action(self.d_local, "pull", self._pull, texts.PULL_EXPLAIN)
 
         ttk.Label(self.d_local, text="Beskrivning av ändringarna (commit-filen .Gitta-commit):",
                   font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10, 2))
         self.d_hint = ttk.Label(self.d_local, foreground=ORANGE, wraplength=620, justify="left")
         self.d_hint.pack(anchor="w")
-        self.d_commit = scrolledtext.ScrolledText(self.d_local, height=8, wrap="word", font=FONT)
-        self.d_commit.pack(fill="x", pady=4)
+        self.d_commit = scrolledtext.ScrolledText(self.d_local, height=7, wrap="word", font=FONT)
+        self.d_commit.pack(fill="both", expand=True, pady=4)
+        self.d_commit.bind("<KeyRelease>", lambda _e: self._update_preview())
+        ttk.Label(self.d_local, text=texts.PREVIEW_HINT, foreground=GREY,
+                  font=FONT_SMALL).pack(anchor="w")
+        self.d_preview = scrolledtext.ScrolledText(
+            self.d_local, height=8, wrap="word", font=FONT, state="disabled", padx=10, pady=6)
+        self.d_preview.pack(fill="both", expand=True, pady=4)
+        mdview.setup_tags(self.d_preview)
         self._action(self.d_local, "commit and push  -  Spara ändringar",
                      self._commit_push, texts.COMMIT_EXPLAIN)
+
+        # Pull tab (used less often, so it has its own tab)
+        self.d_sync = ttk.Label(self.d_tab_pull, justify="left", wraplength=620)
+        self.d_sync.pack(anchor="w", pady=6)
+        self._action(self.d_tab_pull, "pull", self._pull, texts.PULL_EXPLAIN)
+        ttk.Label(self.d_tab_pull, text=texts.PULL_LONG, wraplength=620, foreground=GREY,
+                  justify="left").pack(anchor="w", pady=14)
 
     def _action(self, parent, label, command, explain):
         row = ttk.Frame(parent)
@@ -435,12 +450,26 @@ class GittaApp(tk.Tk):
             self.d_commit.insert("1.0", self._loaded_text)
             if commitfile.is_dir(path):
                 self.d_commit.config(state="disabled")
+            self.d_tabs.tab(self.d_tab_pull, state="normal")
+            self.d_sync.config(text="Läser status...")
+            self._update_preview()
             self._refresh_state()
         else:
             self.local_path = None
             self.d_local.pack_forget()
             self.d_remote.pack(fill="x", pady=10)
             self.open_folder_btn.config(state="disabled")
+            self.d_tabs.tab(self.d_tab_pull, state="hidden")  # nothing to pull yet
+            if self.d_tabs.select() == str(self.d_tab_pull):
+                self.d_tabs.select(self.d_tab_main)
+
+    def _update_preview(self):
+        text = self.d_commit.get("1.0", "end").strip()
+        if text:
+            mdview.render(self.d_preview, text, first_line_title=True)
+        else:
+            mdview.show_message(self.d_preview, "Här visas beskrivningen med formatering "
+                                                "så fort du skrivit något.")
 
     def fetch_readme(self, full, callback):
         """callback(text, error): text '' means the project has no README."""
@@ -498,19 +527,25 @@ class GittaApp(tk.Tk):
         lines = [f"Gren (branch): {info['branch']}"]
         lines.append(f"{len(files)} ändrade filer sedan senaste commit." if files
                      else "Inga osparade ändringar.")
+        sync = []
         if info["offline"]:
             lines.append("Kunde inte kontakta GitHub just nu.")
+            sync.append("Kunde inte kontakta GitHub just nu.")
         elif info["ab"] is None:
             lines.append("Projektet är inte kopplat till GitHub än - gör commit and push.")
+            sync.append("Projektet är inte kopplat till GitHub än.")
         else:
             ahead, behind = info["ab"]
-            if behind:
-                lines.append(f"{behind} nyheter finns på GitHub - gör en pull.")
             if ahead:
                 lines.append(f"{ahead} commits ligger bara på din dator - gör en push.")
+            if behind:
+                sync.append(f"{behind} nyheter finns på GitHub - gör en pull.")
+            else:
+                sync.append("Inga nyheter att hämta från GitHub.")
             if not behind and not ahead:
                 lines.append("Datorn och GitHub är i synk.")
         self.d_state.config(text="\n".join(lines))
+        self.d_sync.config(text="\n".join(sync))
         self.d_files.config(state="normal")
         self.d_files.delete("1.0", "end")
         for code, name in files:
@@ -562,7 +597,7 @@ class GittaApp(tk.Tk):
         repo = self.current
         dest = os.path.join(parent, repo["name"])
         if os.path.exists(dest):
-            messagebox.showerror("Mappen finns redan", f"{dest} finns redan. Välj en annan plats.")
+            popups.showerror("Mappen finns redan", f"{dest} finns redan. Välj en annan plats.")
             return
         self.cfg["default_parent"] = parent
         self._set_busy(True, "Kör clone...")
@@ -587,10 +622,10 @@ class GittaApp(tk.Tk):
             return
         repo = self.current
         if not gitops.is_repo(folder):
-            messagebox.showerror("Inte ett projekt", "Mappen är inte ett git-projekt (saknar .git).")
+            popups.showerror("Inte ett projekt", "Mappen är inte ett git-projekt (saknar .git).")
             return
         if repo["full_name"].lower() not in gitops.remote_url(folder).lower():
-            messagebox.showerror("Fel projekt",
+            popups.showerror("Fel projekt",
                                  f"Mappen hör inte till {repo['full_name']} på GitHub.")
             return
         gitops.ensure_exclude(folder, commitfile.FILENAME)
@@ -604,7 +639,7 @@ class GittaApp(tk.Tk):
             return gitops.pull(path, token)
         def done(out):
             self._set_busy(False)
-            messagebox.showinfo("pull klar", out.strip() or "Klart.")
+            popups.showinfo("pull klar", out.strip() or "Klart.")
             self._refresh_state()
             self._reload_repos()
         self.bg(work, done)
@@ -613,7 +648,7 @@ class GittaApp(tk.Tk):
         path, token = self.local_path, self.cfg["token"]
         message = self.d_commit.get("1.0", "end").strip()
         if not message:
-            messagebox.showwarning("Beskrivning saknas",
+            popups.showwarning("Beskrivning saknas",
                                    "Skriv en kort beskrivning av ändringarna först.")
             return
         if commitfile.is_dir(path):
@@ -636,8 +671,9 @@ class GittaApp(tk.Tk):
             commitfile.remove(path)
             self.d_commit.config(state="normal")
             self.d_commit.delete("1.0", "end")
+            self._update_preview()
             self._loaded_text = ""
-            messagebox.showinfo(
+            popups.showinfo(
                 "Sparat",
                 "Dina ändringar är nu sparade (commit) och skickade till GitHub (push)."
                 if kind == "commit" else "Befintliga commits skickades till GitHub (push).")
@@ -661,7 +697,7 @@ class GittaApp(tk.Tk):
         if not self._need_git():
             return
         if not self.repos:
-            messagebox.showinfo("Inga projekt", "Projektlistan är tom eller inte laddad än.")
+            popups.showinfo("Inga projekt", "Projektlistan är tom eller inte laddad än.")
             return
         CloneManyDialog(self)
 
@@ -673,7 +709,7 @@ class GittaApp(tk.Tk):
         folder = os.path.join(parent, name) if new_folder else parent
         existing_repo = gitops.is_repo(folder)
         if existing_repo and gitops.remote_url(folder):
-            messagebox.showerror(
+            popups.showerror(
                 "Redan kopplat till GitHub",
                 f"{folder} är redan ett git-projekt med en GitHub-adress "
                 f"({gitops.remote_url(folder)}).\n\nFinns projektet i listan väljer du det "
@@ -701,7 +737,7 @@ class GittaApp(tk.Tk):
         more = f"\n  ...och {len(findings) - 12} till" if len(findings) > 12 else ""
         warn = ("OBS: projektet är PUBLIC. Vem som helst på internet kan läsa det.\n\n"
                 if public else "")
-        return messagebox.askyesno(
+        return popups.askyesno(
             "Möjliga hemligheter hittades",
             f"{warn}Gitta hittade saker som kan vara lösenord, nycklar eller andra "
             f"hemligheter:\n\n  {shown}{more}\n\n"
@@ -742,7 +778,7 @@ class GittaApp(tk.Tk):
             self._set_busy(False)
             on_done()
             self._reload_repos(select=full)
-            messagebox.showinfo("Projektet skapades",
+            popups.showinfo("Projektet skapades",
                                 f"{full} finns nu på GitHub och i mappen\n{path}")
         self.bg(work, done)
 
@@ -845,11 +881,11 @@ class NewProjectDialog(tk.Toplevel):
         name = self.name.get().strip()
         parent = self.parent.get().strip()
         if not REPO_NAME_RE.match(name):
-            messagebox.showwarning("Ogiltigt namn", "Använd bara bokstäver, siffror, - _ och . (inga mellanslag).",
+            popups.showwarning("Ogiltigt namn", "Använd bara bokstäver, siffror, - _ och . (inga mellanslag).",
                                    parent=self)
             return
         if not os.path.isdir(parent):
-            messagebox.showwarning("Mappen finns inte", "Välj en mapp som finns.", parent=self)
+            popups.showwarning("Mappen finns inte", "Välj en mapp som finns.", parent=self)
             return
         self.app.create_project(name, self.desc.get().strip(), os.path.normpath(parent),
                                 False if self.existing else self.new_folder.get(),
@@ -957,7 +993,7 @@ class CloneManyDialog(tk.Toplevel):
         if full:
             ReadmeWindow(self.app, full)
         else:
-            messagebox.showinfo("Välj ett projekt", "Klicka på ett projekt i listan först.", parent=self)
+            popups.showinfo("Välj ett projekt", "Klicka på ett projekt i listan först.", parent=self)
 
     def _select_all(self):
         self.tree.selection_set(self.tree.get_children())
@@ -976,14 +1012,14 @@ class CloneManyDialog(tk.Toplevel):
         if not picked or not self.root_var.get().strip():
             return
         if not os.path.isdir(root):
-            if not messagebox.askyesno("Mappen finns inte", f"Skapa mappen\n{root}\n?", parent=self):
+            if not popups.askyesno("Mappen finns inte", f"Skapa mappen\n{root}\n?", parent=self):
                 return
             try:
                 os.makedirs(root)
             except OSError as exc:
-                messagebox.showerror("Kunde inte skapa mappen", str(exc), parent=self)
+                popups.showerror("Kunde inte skapa mappen", str(exc), parent=self)
                 return
-        if not messagebox.askyesno(
+        if not popups.askyesno(
                 "Hämta projekt",
                 f"Hämta {len(picked)} projekt till\n{root}\n\nDet kan ta en stund.", parent=self):
             return
@@ -1037,7 +1073,7 @@ class CloneManyDialog(tk.Toplevel):
             lines.append(f"Misslyckades med {name}: {why}")
         self.destroy()
         app._reload_repos()
-        (messagebox.showwarning if res["failed"] or res["skipped"] else messagebox.showinfo)(
+        (popups.showwarning if res["failed"] or res["skipped"] else popups.showinfo)(
             "clone klar", "\n".join(lines) or "Inget att göra.")
 
 

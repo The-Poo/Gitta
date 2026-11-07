@@ -33,14 +33,23 @@ mitt-projekt/
 ```
 Lägg till inloggningssida
 
-- Formulär med e-post och lösenord
-- Felmeddelande vid fel lösenord
-- Uppdaterat README med hur man startar
+**Vad:** Användare kan nu logga in med e-post och lösenord.
+
+- **Formulär** med e-post och lösenord
+- **Felmeddelande** vid fel lösenord
+- README uppdaterad med hur man startar
+
+**Varför:** Utan inloggning kunde ingen spara sina inställningar.
 ```
 
-- **Första raden:** kort (helst under 60 tecken) och säger vad som ändrats.
-- **Tom rad**, sedan några punkter om det behövs.
-- Skriv vad som ändrats och gärna varför, inte "ändringar" eller "fix".
+- **Första raden:** kort (helst under 60 tecken), utan formatering. Den blir
+  commitens rubrik.
+- **Tom rad**, sedan en text där du gärna använder **fet text**
+  (`**så här**`), punktlistor (`- punkt`) och rubriker (`# Rubrik`).
+- Skriv vad som ändrats och gärna varför, inte bara "ändringar" eller "fix".
+- Gitta visar texten formaterad i en förhandsvisning under rutan, medan du
+  skriver. På GitHub visas commit-texten som vanlig text, så där syns
+  stjärnorna, men punkterna är fortfarande lätta att läsa.
 
 ### Flera filer (för verktyg)
 

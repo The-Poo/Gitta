@@ -180,3 +180,40 @@ def push(path, token):
 
 def pull(path, token):
     return run(["pull", "--ff-only"], cwd=path, token=token)
+
+
+def log(path, limit=200):
+    """Newest-first list of (hash, short_hash, date, subject). Empty if no commits."""
+    try:
+        out = run(["log", f"-n{limit}", "--date=format:%Y-%m-%d %H:%M",
+                   "--format=%H%x1f%h%x1f%ad%x1f%s"], cwd=path)
+    except GitError:
+        return []
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 4:
+            rows.append(tuple(parts))
+    return rows
+
+
+def revert_to(path, target, message, identity=None):
+    """Make the working tree match commit ``target`` by reverting every commit
+    after it as ONE new commit. History is kept, so a normal push works and
+    nothing is lost. Requires a clean working tree."""
+    if status(path):
+        raise GitError("Du har osparade ändringar. Gör commit and push först, "
+                       "sedan kan du gå tillbaka.")
+    ident = []
+    if identity and not has_identity(path):
+        ident = ["-c", f"user.name={identity[0]}", "-c", f"user.email={identity[1]}"]
+    try:
+        run(ident + ["revert", "--no-commit", f"{target}..HEAD"], cwd=path)
+    except GitError:
+        try:
+            run(["revert", "--abort"], cwd=path)
+        except GitError:
+            run(["reset", "--hard", "HEAD"], cwd=path)  # tree was clean before
+        raise
+    run(ident + ["commit", "-F", "-"], cwd=path, stdin=message)
+

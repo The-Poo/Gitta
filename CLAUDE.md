@@ -18,8 +18,9 @@ Tkinter, endast standardbiblioteket). Se `README.md` och `docs/00-for-utvecklare
 - **Efter varje ändring i kodbasen** (nya filer, buggfixar, refaktorering,
   dokumentation) skriv eller uppdatera `.Gitta-commit` i projektets rot, innan
   du avslutar svaret. Skriv om filen helt så den bara beskriver det som är
-  osparat just nu. Format: kort titelrad (under 60 tecken), tom rad, sedan
-  några punkter om vad och varför, på svenska.
+  osparat just nu. Format: en kort titelrad utan formatering (under 60 tecken), tom rad, sedan en formaterad text i Markdown:
+  `**Vad:**`/`**Varför:**` som fet text och punkter med `- `, gärna med ett **fet** nyckelord först i varje punkt. Gitta visar
+  formateringen i en förhandsvisning. Skriv på svenska om inget annat sägs.
 - Gäller även små ändringar och felsökningspass med många Edit-anrop. Tumregel:
   skulle `git status` visa något, uppdatera filen.
 - Påminn användaren om att öppna Gitta och trycka commit and push när ett

@@ -7,9 +7,10 @@ committa och pusha. Hjälp till så här:
   refaktorering, ändrad dokumentation) skriv eller uppdatera
   `.Gitta-commit` i projektets rot. Fråga inte användaren om
   commit-meddelandet. Skriv om filen helt så den bara beskriver det som är
-  osparat just nu, inte staplat från tidigare omgångar. Format: kort
-  titelrad (under 60 tecken), tom rad, sedan några punkter om vad och varför.
-  Skriv på svenska om inget annat sägs. Detaljer: `gitta-docs/commit-filer.md`.
+  osparat just nu, inte staplat från tidigare omgångar. Format: en kort titelrad utan formatering (under 60 tecken), tom rad, sedan en formaterad text i Markdown:
+  `**Vad:**`/`**Varför:**` som fet text och punkter med `- `, gärna med ett **fet** nyckelord först i varje punkt. Gitta visar
+  formateringen i en förhandsvisning. Skriv på svenska om inget annat sägs.
+  Detaljer: `gitta-docs/commit-filer.md`.
 - **Påminn om att spara:** När ett naturligt delsteg är klart, eller när
   användaren verkar vara på väg att avsluta, säg tydligt: "Det här är ett
   bra läge att öppna Gitta och trycka commit and push. Beskrivningen ligger
