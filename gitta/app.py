@@ -22,6 +22,7 @@ ORANGE = theme.WARN
 
 STATUS_WORDS = {"??": "ny", "M": "ändrad", "A": "tillagd", "D": "borttagen",
                 "R": "omdöpt", "U": "konflikt"}
+POLL_MS = 4000  # how often Gitta looks for changed files
 REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -301,6 +302,12 @@ class GittaApp(tk.Tk):
         panes.add(right, weight=3)
         self._build_detail(right)
         self._reload_repos()
+        self._last_changes = None
+        self._poll_busy = False
+        if getattr(self, "_poll_job", None):
+            self.after_cancel(self._poll_job)
+        self._poll_job = self.after(POLL_MS, self._poll_changes)
+        self.bind("<FocusIn>", self._on_focus, add="+")
 
     def _reload_repos(self, select=None):
         self._readmes.clear()  # README may have changed after pull/push
@@ -322,8 +329,59 @@ class GittaApp(tk.Tk):
             return repos, changes
         self.bg(work, lambda res: self._fill_tree(res, select))
 
+    # ----------------------------------------------------- change watching
+
+    def _on_focus(self, event):
+        if event.widget is self:
+            self._poll_changes(reschedule=False)
+
+    def _poll_changes(self, reschedule=True):
+        """Cheap local check (no GitHub): has any file changed since last look?"""
+        if reschedule:
+            self._poll_job = self.after(POLL_MS, self._poll_changes)
+        if self._poll_busy or not hasattr(self, "tree") or not self.tree.winfo_exists():
+            return
+        projects = dict(self.cfg["projects"])
+        current = self.local_path
+        if not projects or not gitops.find_git():
+            return
+        self._poll_busy = True
+
+        def work():
+            counts, current_files = {}, None
+            for full, p in projects.items():
+                if os.path.isdir(p) and gitops.is_repo(p):
+                    try:
+                        files = gitops.status(p)
+                    except gitops.GitError:
+                        continue
+                    counts[full] = len(files)
+                    if p == current:
+                        current_files = files
+            return counts, current_files, current
+
+        def done(res):
+            self._poll_busy = False
+            counts, files, path = res
+            sig = (counts, tuple(files) if files is not None else None)
+            if sig == self._last_changes:
+                return
+            first = self._last_changes is None
+            self._last_changes = sig
+            for full, n in counts.items():
+                if self.tree.exists(full):
+                    self.tree.set(full, "status", f"● {n} ändringar" if n else "Allt sparat")
+                    self.tree.item(full, tags=("dirty" if n else "clean",))
+            if not first and files is not None and path == self.local_path:
+                self._refresh_state()  # also updates file list and hint
+
+        def fail(_exc):
+            self._poll_busy = False
+        self.bg(work, done, fail)
+
     def _fill_tree(self, result, select):
         self._set_busy(False)
+        self._last_changes = None
         self.repos, changes = result
         self.tree.delete(*self.tree.get_children())
         for r in self.repos:
@@ -446,8 +504,8 @@ class GittaApp(tk.Tk):
 
         # Pull tab (used less often, so it has its own tab)
         self.d_sync = ttk.Label(self.d_tab_pull, justify="left", wraplength=620)
+        self._action(self.d_tab_pull, "pull", self._pull, texts.PULL_EXPLAIN, side="bottom")
         self.d_sync.pack(anchor="w", pady=6)
-        self._action(self.d_tab_pull, "pull", self._pull, texts.PULL_EXPLAIN)
         ttk.Label(self.d_tab_pull, text=texts.PULL_LONG, wraplength=620, foreground=GREY,
                   justify="left").pack(anchor="w", pady=14)
 
@@ -906,7 +964,13 @@ class NewProjectDialog(tk.Toplevel):
         self.configure(bg=theme.BG)
         self.transient(app)
         self.grab_set()
-        f = ttk.Frame(self, padding=16)
+        # Buttons live in a bar packed first at the bottom, so they stay visible
+        # however the window is resized.
+        btns = ttk.Frame(self, padding=(16, 6, 16, 14))
+        btns.pack(side="bottom", fill="x")
+        ttk.Button(btns, text="Avbryt", command=self.destroy).pack(side="right", padx=6)
+        ttk.Button(btns, text="Skapa projekt", command=self._create).pack(side="right")
+        f = ttk.Frame(self, padding=(16, 16, 16, 0))
         f.pack(fill="both", expand=True)
 
         start = app.cfg.get("default_parent") or os.path.join(os.path.expanduser("~"), "Documents")
@@ -960,11 +1024,6 @@ class NewProjectDialog(tk.Toplevel):
         ttk.Label(f, text=texts.EXISTING_FILES_WARNING, wraplength=480, foreground=ORANGE,
                   font=FONT_SMALL, justify="left").grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
         row += 1
-
-        btns = ttk.Frame(f)
-        btns.grid(row=row, column=0, columnspan=2, sticky="e", pady=(14, 0))
-        ttk.Button(btns, text="Avbryt", command=self.destroy).pack(side="right", padx=6)
-        ttk.Button(btns, text="Skapa projekt", command=self._create).pack(side="right")
 
         for var in (self.name, self.parent):
             var.trace_add("write", lambda *_: self._preview())
@@ -1035,7 +1094,13 @@ class CloneManyDialog(tk.Toplevel):
         self.geometry("640x580")
         self.transient(app)
         self.grab_set()
-        f = ttk.Frame(self, padding=16)
+        btns = ttk.Frame(self, padding=(16, 6, 16, 14))
+        btns.pack(side="bottom", fill="x")
+        self.cancel_btn = ttk.Button(btns, text="Avbryt", command=self.destroy)
+        self.cancel_btn.pack(side="right", padx=6)
+        self.go_btn = ttk.Button(btns, text="clone valda", command=self._start)
+        self.go_btn.pack(side="right")
+        f = ttk.Frame(self, padding=(16, 16, 16, 0))
         f.pack(fill="both", expand=True)
 
         ttk.Label(f, text=texts.CLONE_MANY_EXPLAIN, wraplength=590, foreground=GREY,
@@ -1086,12 +1151,6 @@ class CloneManyDialog(tk.Toplevel):
         self.progress = ttk.Label(f, text=note, foreground=GREY, font=FONT_SMALL)
         self.progress.pack(anchor="w", pady=(6, 0))
 
-        btns = ttk.Frame(f)
-        btns.pack(fill="x", pady=(10, 0))
-        self.cancel_btn = ttk.Button(btns, text="Avbryt", command=self.destroy)
-        self.cancel_btn.pack(side="right", padx=6)
-        self.go_btn = ttk.Button(btns, text="clone valda", command=self._start)
-        self.go_btn.pack(side="right")
         self._update_count()
 
     def _browse(self):
