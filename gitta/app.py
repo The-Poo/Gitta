@@ -10,7 +10,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import filedialog, scrolledtext, ttk
 
-from . import __version__, commitfile, config, defaults, github, gitops, leakcheck, mdview, popups, texts, theme
+from . import __version__, commitfile, config, defaults, easter, github, gitops, leakcheck, mdview, popups, texts, theme
 
 FONT = ("Segoe UI", 10)
 FONT_BIG = ("Segoe UI", 16, "bold")
@@ -114,6 +114,8 @@ class GittaApp(tk.Tk):
         help_menu.add_command(label="Commit-filen", command=lambda: self._help("Commit-filen", texts.HELP_COMMIT))
         help_menu.add_command(label="Ordlista", command=lambda: self._help("Ordlista", texts.HELP_GLOSSARY))
         help_menu.add_command(label="Skapa OAuth App", command=lambda: self._help("Skapa OAuth App", texts.OAUTH_GUIDE))
+        help_menu.add_separator()
+        help_menu.add_command(label="LegoOfDoom", command=lambda: easter.ignite(self))
         menubar.add_cascade(label="Hjälp", menu=help_menu)
         self.config(menu=menubar)
 
