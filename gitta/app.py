@@ -373,9 +373,11 @@ class GittaApp(tk.Tk):
         self.d_tabs.pack(fill="both", expand=True, pady=(6, 0))
         self.d_tab_main = ttk.Frame(self.d_tabs, padding=8)
         self.d_tab_pull = ttk.Frame(self.d_tabs, padding=8)
+        self.d_tab_history = ttk.Frame(self.d_tabs, padding=8)
         self.d_tab_readme = ttk.Frame(self.d_tabs, padding=8)
         self.d_tabs.add(self.d_tab_main, text="Commit and push")
         self.d_tabs.add(self.d_tab_pull, text="Pull")
+        self.d_tabs.add(self.d_tab_history, text="Historik")
         self.d_tabs.add(self.d_tab_readme, text="README")
         self.d_readme = scrolledtext.ScrolledText(
             self.d_tab_readme, wrap="word", font=FONT, state="disabled", padx=12, pady=8)
@@ -397,21 +399,50 @@ class GittaApp(tk.Tk):
                                state="disabled")
         self.d_files.pack(fill="x")
 
+        # The button is packed first (side="bottom") so it can never be pushed
+        # out of view by the editor.
+        self._action(self.d_local, "commit and push  -  Spara ändringar",
+                     self._commit_push, texts.COMMIT_EXPLAIN, side="bottom")
         ttk.Label(self.d_local, text="Beskrivning av ändringarna (commit-filen .Gitta-commit):",
                   font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(10, 2))
         self.d_hint = ttk.Label(self.d_local, foreground=ORANGE, wraplength=620, justify="left")
         self.d_hint.pack(anchor="w")
-        self.d_commit = scrolledtext.ScrolledText(self.d_local, height=7, wrap="word", font=FONT)
+        bar = ttk.Frame(self.d_local)
+        bar.pack(fill="x")
+        ttk.Button(bar, text="Fet", width=6,
+                   command=lambda: self._wrap_selection("**")).pack(side="left")
+        ttk.Button(bar, text="Punktlista", width=10,
+                   command=lambda: self._prefix_lines("- ")).pack(side="left", padx=4)
+        ttk.Button(bar, text="Rubrik", width=8,
+                   command=lambda: self._prefix_lines("## ")).pack(side="left")
+        ttk.Label(bar, text=texts.EDITOR_HINT, foreground=GREY,
+                  font=FONT_SMALL).pack(side="left", padx=10)
+        self.d_commit = scrolledtext.ScrolledText(
+            self.d_local, height=10, wrap="word", font=FONT, padx=10, pady=6, undo=True)
         self.d_commit.pack(fill="both", expand=True, pady=4)
+        mdview.setup_tags(self.d_commit)
         self.d_commit.bind("<KeyRelease>", lambda _e: self._update_preview())
-        ttk.Label(self.d_local, text=texts.PREVIEW_HINT, foreground=GREY,
-                  font=FONT_SMALL).pack(anchor="w")
-        self.d_preview = scrolledtext.ScrolledText(
-            self.d_local, height=8, wrap="word", font=FONT, state="disabled", padx=10, pady=6)
-        self.d_preview.pack(fill="both", expand=True, pady=4)
-        mdview.setup_tags(self.d_preview)
-        self._action(self.d_local, "commit and push  -  Spara ändringar",
-                     self._commit_push, texts.COMMIT_EXPLAIN)
+        self.d_commit.bind("<<Paste>>", lambda _e: self.after(20, self._update_preview))
+
+        # History tab: list of commits plus "go back to this version"
+        ttk.Label(self.d_tab_history, text=texts.HISTORY_EXPLAIN, foreground=GREY,
+                  wraplength=620, justify="left").pack(anchor="w", pady=(0, 6))
+        self._history = []
+        self.d_hist_btn = ttk.Button(self.d_tab_history, text="Gå tillbaka till vald version",
+                                     command=self._go_back, width=34)
+        self.d_hist_btn.pack(side="bottom", anchor="w", pady=6)
+        hbox = ttk.Frame(self.d_tab_history)
+        hbox.pack(fill="both", expand=True)
+        self.d_hist = ttk.Treeview(hbox, columns=("date", "msg"), show="headings",
+                                   selectmode="browse")
+        self.d_hist.heading("date", text="Datum")
+        self.d_hist.heading("msg", text="Beskrivning")
+        self.d_hist.column("date", width=130, stretch=False)
+        self.d_hist.column("msg", width=480)
+        hscroll = ttk.Scrollbar(hbox, orient="vertical", command=self.d_hist.yview)
+        self.d_hist.configure(yscrollcommand=hscroll.set)
+        self.d_hist.pack(side="left", fill="both", expand=True)
+        hscroll.pack(side="right", fill="y")
 
         # Pull tab (used less often, so it has its own tab)
         self.d_sync = ttk.Label(self.d_tab_pull, justify="left", wraplength=620)
@@ -420,9 +451,9 @@ class GittaApp(tk.Tk):
         ttk.Label(self.d_tab_pull, text=texts.PULL_LONG, wraplength=620, foreground=GREY,
                   justify="left").pack(anchor="w", pady=14)
 
-    def _action(self, parent, label, command, explain):
+    def _action(self, parent, label, command, explain, side="top"):
         row = ttk.Frame(parent)
-        row.pack(fill="x", pady=5)
+        row.pack(fill="x", pady=5, side=side)
         btn = ttk.Button(row, text=label, command=command, width=34)
         btn.pack(side="left")
         ttk.Label(row, text=explain, foreground=GREY, font=FONT_SMALL,
@@ -451,8 +482,10 @@ class GittaApp(tk.Tk):
             if commitfile.is_dir(path):
                 self.d_commit.config(state="disabled")
             self.d_tabs.tab(self.d_tab_pull, state="normal")
+            self.d_tabs.tab(self.d_tab_history, state="normal")
             self.d_sync.config(text="Läser status...")
             self._update_preview()
+            self._load_history()
             self._refresh_state()
         else:
             self.local_path = None
@@ -460,16 +493,94 @@ class GittaApp(tk.Tk):
             self.d_remote.pack(fill="x", pady=10)
             self.open_folder_btn.config(state="disabled")
             self.d_tabs.tab(self.d_tab_pull, state="hidden")  # nothing to pull yet
-            if self.d_tabs.select() == str(self.d_tab_pull):
+            self.d_tabs.tab(self.d_tab_history, state="hidden")
+            if self.d_tabs.select() in (str(self.d_tab_pull), str(self.d_tab_history)):
                 self.d_tabs.select(self.d_tab_main)
 
     def _update_preview(self):
-        text = self.d_commit.get("1.0", "end").strip()
-        if text:
-            mdview.render(self.d_preview, text, first_line_title=True)
+        """Re-style the editor in place (kept under the old name for callers)."""
+        mdview.highlight(self.d_commit)
+
+    def _wrap_selection(self, mark):
+        w = self.d_commit
+        if str(w.cget("state")) == "disabled":
+            return
+        if w.tag_ranges("sel"):
+            a, b = w.index("sel.first"), w.index("sel.last")
+            w.insert(b, mark)
+            w.insert(a, mark)
         else:
-            mdview.show_message(self.d_preview, "Här visas beskrivningen med formatering "
-                                                "så fort du skrivit något.")
+            w.insert("insert", mark * 2)
+            w.mark_set("insert", f"insert-{len(mark)}c")
+        w.focus_set()
+        self._update_preview()
+
+    def _prefix_lines(self, prefix):
+        w = self.d_commit
+        if str(w.cget("state")) == "disabled":
+            return
+        if w.tag_ranges("sel"):
+            first = int(w.index("sel.first").split(".")[0])
+            last = int(w.index("sel.last").split(".")[0])
+        else:
+            first = last = int(w.index("insert").split(".")[0])
+        for n in range(first, last + 1):
+            w.insert(f"{n}.0", prefix)
+        w.focus_set()
+        self._update_preview()
+
+    # ---------------------------------------------------------------- history
+
+    def _load_history(self):
+        path = self.local_path
+        self.bg(lambda: gitops.log(path),
+                lambda rows: self._fill_history(path, rows), lambda _e: None)
+
+    def _fill_history(self, path, rows):
+        if path != self.local_path:
+            return
+        self._history = rows
+        self.d_hist.delete(*self.d_hist.get_children())
+        for i, (_full, _short, date, subject) in enumerate(rows):
+            self.d_hist.insert("", "end", iid=str(i), values=(
+                date, subject + ("   (nuvarande)" if i == 0 else "")))
+
+    def _go_back(self):
+        sel = self.d_hist.selection()
+        if not sel or int(sel[0]) == 0:
+            popups.showinfo("Välj en äldre version",
+                            "Markera en äldre rad i listan. Den översta är redan där du är nu.")
+            return
+        full, short, date, subject = self._history[int(sel[0])]
+        path, token = self.local_path, self.cfg["token"]
+        if gitops.status(path):
+            popups.showwarning("Osparade ändringar",
+                               "Du har osparade ändringar. Gör commit and push först, "
+                               "sedan kan du gå tillbaka.")
+            return
+        if not popups.askyesno(
+                "Gå tillbaka?",
+                f"Projektet får samma innehåll som vid versionen\n\"{subject}\" ({date}).\n\n"
+                "Filer som tillkommit efter den försvinner, och ändrade filer får sina gamla "
+                "versioner. Gitta sparar detta som en ny commit och skickar den till GitHub. "
+                "Ingenting raderas ur historiken, så du kan gå fram igen senare.",
+                icon="warning", default="no"):
+            return
+        identity = self._identity()
+        self._set_busy(True, "Går tillbaka...")
+
+        def work():
+            gitops.revert_to(path, full, f"Gå tillbaka till: {subject} ({short})", identity)
+            gitops.push(path, token)
+
+        def done(_r):
+            self._set_busy(False)
+            popups.showinfo("Klart", "Projektet är tillbaka på den valda versionen "
+                                     "och skickat till GitHub.")
+            self._load_history()
+            self._refresh_state()
+            self._reload_repos()
+        self.bg(work, done)
 
     def fetch_readme(self, full, callback):
         """callback(text, error): text '' means the project has no README."""
@@ -678,6 +789,7 @@ class GittaApp(tk.Tk):
                 "Dina ändringar är nu sparade (commit) och skickade till GitHub (push)."
                 if kind == "commit" else "Befintliga commits skickades till GitHub (push).")
             self._refresh_state()
+            self._load_history()
             self._reload_repos()
         self.bg(work, done)
 

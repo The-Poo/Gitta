@@ -47,7 +47,7 @@ Lägg till inloggningssida
 - **Tom rad**, sedan en text där du gärna använder **fet text**
   (`**så här**`), punktlistor (`- punkt`) och rubriker (`# Rubrik`).
 - Skriv vad som ändrats och gärna varför, inte bara "ändringar" eller "fix".
-- Gitta visar texten formaterad i en förhandsvisning under rutan, medan du
+- Gitta visar texten formaterad direkt i rutan (du redigerar den som den ser ut), medan du
   skriver. På GitHub visas commit-texten som vanlig text, så där syns
   stjärnorna, men punkterna är fortfarande lätta att läsa.
 

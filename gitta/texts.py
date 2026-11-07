@@ -65,7 +65,7 @@ filen tas bort automatiskt efter att det lyckats.
 
 Bra meddelande: en kort rad om vad som ändrats, en tom rad och sedan
 formaterad text med **fet text** och punkter (- punkt). Gitta visar
-förhandsvisning medan du skriver.
+formaterad text direkt i rutan medan du skriver.
 """
 
 HELP_GLOSSARY = """\
@@ -111,14 +111,17 @@ CLONE_MANY_EXPLAIN = (
     "projekt så att de dyker upp som 'på datorn' i listan."
 )
 
-PREVIEW_HINT = (
-    "Förhandsvisning. Du kan formatera med **fet text**, listor som \"- punkt\" "
-    "och \"# rubrik\". Första raden är titeln."
-)
-
 PULL_LONG = (
     "pull behövs framför allt när du jobbar från flera datorer, när någon "
     "annan har ändrat i projektet, eller om du ändrat något direkt på "
     "github.com. Har du osparade ändringar som krockar med nyheterna får du "
     "ett felmeddelande. Gör då commit and push först."
+)
+
+EDITOR_HINT = "Skriv direkt här. Första raden är titeln. Markera text och tryck Fet."
+
+HISTORY_EXPLAIN = (
+    "Här ser du alla sparade versioner (commits). Markera en äldre version och tryck "
+    "knappen för att få projektet som det såg ut då. Gitta gör det som en ny commit, så "
+    "historiken finns kvar och du kan alltid gå fram igen."
 )
